@@ -7,7 +7,7 @@ import json
 import os
 
 # ===============================
-# Dados do bot
+# bot data
 # ===============================
 TOKEN = "" #Paste the bot token here.
 
@@ -31,7 +31,7 @@ bot = discord.Client(intents=INTENTS)
 tree = app_commands.CommandTree(bot)
 
 # ===============================
-# Dados persistentes
+# Persistent data
 # ===============================
 if os.path.exists(SERVER_CHANNELS_FILE):
     with open(SERVER_CHANNELS_FILE, "r") as f:
@@ -64,7 +64,7 @@ def salvar_reaction_messages():
         json.dump(REACTION_MESSAGES, f, indent=4)
 
 # ===============================
-#  global de roles por emoji
+#  global roles for emoji
 # ===============================
 ROLE_IDS = {}
 
@@ -100,7 +100,7 @@ def buscar_contests_codeforces():
     return proximos
 
 # ===============================
-# Loop automático para enviar contests
+# Automatic loop for sending contests.
 # ===============================
 @tasks.loop(minutes=10)
 async def verificar_contests():
@@ -181,7 +181,7 @@ async def reactionrole(interaction: discord.Interaction):
     await interaction.response.send_message("Reaction roles configuradas e cargos criados automaticamente!", ephemeral=True)
 
 # ===============================
-# Comando /mostrardivs
+# comand /mostrardivs trade for listdivs 
 # ===============================
 @tree.command(name="mostrardivs", description="Mostra os próximos contests por divisão")
 async def mostrardivs(interaction: discord.Interaction):
@@ -217,7 +217,7 @@ async def setcanal(interaction: discord.Interaction, canal: discord.TextChannel)
     await interaction.response.send_message(f"Canal de avisos definido para {canal.mention}!", ephemeral=True)
 
 # ===============================
-# Eventos de adicionar/remover reaction
+# Add/remove reaction events
 # ===============================
 @bot.event
 async def on_raw_reaction_add(payload):
@@ -257,14 +257,15 @@ async def on_raw_reaction_remove(payload):
         print(f"[DEBUG] Removido cargo {role.name} de {member.name} ({guild.name})")
 
 # ===============================
-# Evento on_ready
+# Event on_ready
 # ===============================
 @bot.event
 async def on_ready():
     global ROLE_IDS
     print(f"[DEBUG] Bot conectado como {bot.user}")
 
-    # Cria cargos automaticamente se não existirem
+    # Automatically creates roles if they don't exist.
+
     for guild in bot.guilds:
         print(f"[DEBUG] Inicializando roles no servidor: {guild.name} ({guild.id})")
         for emoji, nome in ROLE_NAMES.items():
