@@ -145,7 +145,7 @@ async def verificar_contests():
             salvar_sent_contests()
 
 # ===============================
-# Comando /reactionrole
+# comand /reactionrole
 # ===============================
 @tree.command(name="reactionrole", description="Configura reaction roles e cria cargos automaticamente")
 @app_commands.default_permissions(administrator=True)
@@ -205,7 +205,7 @@ async def mostrardivs(interaction: discord.Interaction):
     await interaction.followup.send(msg, ephemeral=False)
 
 # ===============================
-# Comando /setcanal
+# setchanel
 # ===============================
 @tree.command(name="setcanal", description="Define o canal de avisos do Codeforces")
 @app_commands.default_permissions(administrator=True)
