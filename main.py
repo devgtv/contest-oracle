@@ -51,121 +51,121 @@ if os.path.exists(REACTION_MESSAGES_FILE):
 else:
     REACTION_MESSAGES = {}
 
-def salvar_server_channels():
+def save_server_channels():
     with open(SERVER_CHANNELS_FILE, "w") as f:
         json.dump(SERVER_CHANNELS, f, indent=4)
 
-def salvar_sent_contests():
+def save_sent_contests():
     with open(SENT_CONTESTS_FILE, "w") as f:
         json.dump(SENT_CONTESTS, f, indent=4)
 
-def salvar_reaction_messages():
+def save_reaction_messages():
     with open(REACTION_MESSAGES_FILE, "w") as f:
         json.dump(REACTION_MESSAGES, f, indent=4)
 
 # ===============================
-#  global roles for emoji
+# Global roles for emoji
 # ===============================
 ROLE_IDS = {}
 
 # ===============================
-# search contests Codeforces
+# Fetch Codeforces contests
 # ===============================
-def buscar_contests_codeforces():
+def fetch_codeforces_contests():
     url = "https://codeforces.com/api/contest.list?gym=false"
     try:
         res = requests.get(url).json()
     except Exception as e:
-        print(f"[DEBUG] Erro ao buscar contests: {e}")
+        print(f"[DEBUG] Error fetching contests: {e}")
         return []
 
     if res["status"] != "OK":
-        print("[DEBUG] Código de status não OK ao buscar contests")
+        print("[DEBUG] Non-OK status code when fetching contests")
         return []
 
     contests = res["result"]
-    proximos = []
+    upcoming = []
 
     for c in contests:
         if c["phase"] == "BEFORE":
             name = c["name"]
             if ("Div. 1" in name or "Div. 2" in name or "Div. 1 + Div. 2" in name):
-                proximos.append((c, "🔵"))
+                upcoming.append((c, "🔵"))
             elif "Div. 3" in name:
-                proximos.append((c, "🟢"))
+                upcoming.append((c, "🟢"))
             elif "Div. 4" in name:
-                proximos.append((c, "🟡"))
+                upcoming.append((c, "🟡"))
 
-    print(f"[DEBUG] Contests futuros encontrados: {len(proximos)}")
-    return proximos
+    print(f"[DEBUG] Upcoming contests found: {len(upcoming)}")
+    return upcoming
 
 # ===============================
-# Automatic loop for sending contests.
+# Automatic loop for sending contests
 # ===============================
 @tasks.loop(minutes=10)
-async def verificar_contests():
-    print("[DEBUG] ===== Verificando contests =====")
+async def check_contests():
+    print("[DEBUG] ===== Checking contests =====")
     for guild_id, channel_id in SERVER_CHANNELS.items():
         guild = bot.get_guild(int(guild_id))
         if not guild:
-            print(f"[DEBUG] Guild {guild_id} não encontrada")
+            print(f"[DEBUG] Guild {guild_id} not found")
             continue
         channel = guild.get_channel(channel_id)
         if not channel:
-            print(f"[DEBUG] Canal {channel_id} não encontrado em {guild.name}")
+            print(f"[DEBUG] Channel {channel_id} not found in {guild.name}")
             continue
 
-        contests = buscar_contests_codeforces()
+        contests = fetch_codeforces_contests()
         contests = sorted(contests, key=lambda x: x[0]["startTimeSeconds"])
 
-        enviados_servidor = SENT_CONTESTS.get(str(guild_id), [])
+        sent_for_server = SENT_CONTESTS.get(str(guild_id), [])
 
         for c, emoji in contests:
             contest_id = c["id"]
-            if contest_id in enviados_servidor:
+            if contest_id in sent_for_server:
                 continue
 
-            inicio = datetime.datetime.fromtimestamp(c["startTimeSeconds"], datetime.timezone.utc)
-            inicio_str = inicio.strftime("%d/%m %H:%M UTC")
+            start_time = datetime.datetime.fromtimestamp(c["startTimeSeconds"], datetime.timezone.utc)
+            start_str = start_time.strftime("%d/%m %H:%M UTC")
             role_id = ROLE_IDS.get(emoji)
             role_mention = f"<@&{role_id}>" if role_id else ""
 
             msg = (
                 f"{role_mention}\n"
-                f"📢 Novo contest detectado!\n"
+                f"📢 New contest detected!\n"
                 f"{c['name']}\n"
-                f"Começa: {inicio_str}\n"
+                f"Starts: {start_str}\n"
                 f"https://codeforces.com/contest/{c['id']}"
             )
 
-            print(f"[DEBUG][{guild.name}] Enviando contest: {c['name']} para canal: {channel.name}")
+            print(f"[DEBUG][{guild.name}] Sending contest: {c['name']} to channel: {channel.name}")
             await channel.send(msg)
-            enviados_servidor.append(contest_id)
-            SENT_CONTESTS[str(guild_id)] = enviados_servidor
-            salvar_sent_contests()
+            sent_for_server.append(contest_id)
+            SENT_CONTESTS[str(guild_id)] = sent_for_server
+            save_sent_contests()
 
 # ===============================
-# comand /reactionrole
+# Command /reactionrole
 # ===============================
-@tree.command(name="reactionrole", description="Configura reaction roles e cria cargos automaticamente")
+@tree.command(name="reactionrole", description="Sets up reaction roles and creates roles automatically")
 @app_commands.default_permissions(administrator=True)
 async def reactionrole(interaction: discord.Interaction):
     global ROLE_IDS
     guild = interaction.guild
-    print(f"[DEBUG] Comando /reactionrole executado no servidor: {guild.name} ({guild.id})")
+    print(f"[DEBUG] Command /reactionrole executed on server: {guild.name} ({guild.id})")
     ROLE_IDS = {}
 
-    for emoji, nome in ROLE_NAMES.items():
-        role = discord.utils.get(guild.roles, name=nome)
+    for emoji, name in ROLE_NAMES.items():
+        role = discord.utils.get(guild.roles, name=name)
         if not role:
-            role = await guild.create_role(name=nome)
-            print(f"[DEBUG] Cargo criado: {role.name} ({role.id})")
+            role = await guild.create_role(name=name)
+            print(f"[DEBUG] Role created: {role.name} ({role.id})")
         else:
-            print(f"[DEBUG] Cargo existente: {role.name} ({role.id})")
+            print(f"[DEBUG] Existing role: {role.name} ({role.id})")
         ROLE_IDS[emoji] = role.id
 
     desc = (
-        "Reaja com os contests que quer receber alerta:\n\n"
+        "React with the contests you want to receive alerts for:\n\n"
         "🔵 Div 1/2\n"
         "🟢 Div 3\n"
         "🟡 Div 4"
@@ -176,45 +176,45 @@ async def reactionrole(interaction: discord.Interaction):
         await msg.add_reaction(emoji)
 
     REACTION_MESSAGES[str(guild.id)] = msg.id
-    salvar_reaction_messages()
+    save_reaction_messages()
 
-    await interaction.response.send_message("Reaction roles configuradas e cargos criados automaticamente!", ephemeral=True)
+    await interaction.response.send_message("Reaction roles configured and roles created automatically!", ephemeral=True)
 
 # ===============================
-# comand /mostrardivs trade for listdivs 
+# Command /listdivs
 # ===============================
-@tree.command(name="mostrardivs", description="Mostra os próximos contests por divisão")
-async def mostrardivs(interaction: discord.Interaction):
-    print(f"[DEBUG] Comando /mostrardivs chamado no servidor: {interaction.guild.name} ({interaction.guild.id})")
+@tree.command(name="listdivs", description="Shows upcoming contests by division")
+async def listdivs(interaction: discord.Interaction):
+    print(f"[DEBUG] Command /listdivs called on server: {interaction.guild.name} ({interaction.guild.id})")
     await interaction.response.defer(ephemeral=False)
 
-    contests = buscar_contests_codeforces()
+    contests = fetch_codeforces_contests()
     contests = sorted(contests, key=lambda x: x[0]["startTimeSeconds"])
 
     if not contests:
-        await interaction.followup.send("Nenhum contest futuro encontrado.", ephemeral=True)
+        await interaction.followup.send("No upcoming contests found.", ephemeral=True)
         return
 
     msg = ""
     for c, emoji in contests[:10]:
-        inicio = datetime.datetime.fromtimestamp(c["startTimeSeconds"], datetime.timezone.utc)
-        inicio_str = inicio.strftime("%d/%m %H:%M UTC")
+        start_time = datetime.datetime.fromtimestamp(c["startTimeSeconds"], datetime.timezone.utc)
+        start_str = start_time.strftime("%d/%m %H:%M UTC")
         div = ROLE_NAMES.get(emoji, "")
-        msg += f"**{c['name']}** ({div}) — Começa: {inicio_str}\n🔗 https://codeforces.com/contest/{c['id']}\n\n"
+        msg += f"**{c['name']}** ({div}) — Starts: {start_str}\n🔗 https://codeforces.com/contest/{c['id']}\n\n"
 
     await interaction.followup.send(msg, ephemeral=False)
 
 # ===============================
-# setchanel
+# Command /setchannel
 # ===============================
-@tree.command(name="setcanal", description="Define o canal de avisos do Codeforces")
+@tree.command(name="setchannel", description="Sets the Codeforces notification channel")
 @app_commands.default_permissions(administrator=True)
-async def setcanal(interaction: discord.Interaction, canal: discord.TextChannel):
-    SERVER_CHANNELS[str(interaction.guild.id)] = canal.id
-    salvar_server_channels()
-    print(f"[DEBUG] Comando /setcanal chamado no servidor: {interaction.guild.name} ({interaction.guild.id})")
-    print(f"[DEBUG] Canal de avisos definido: {canal.name} ({canal.id})")
-    await interaction.response.send_message(f"Canal de avisos definido para {canal.mention}!", ephemeral=True)
+async def setchannel(interaction: discord.Interaction, channel: discord.TextChannel):
+    SERVER_CHANNELS[str(interaction.guild.id)] = channel.id
+    save_server_channels()
+    print(f"[DEBUG] Command /setchannel called on server: {interaction.guild.name} ({interaction.guild.id})")
+    print(f"[DEBUG] Notification channel set to: {channel.name} ({channel.id})")
+    await interaction.response.send_message(f"Notification channel set to {channel.mention}!", ephemeral=True)
 
 # ===============================
 # Add/remove reaction events
@@ -237,7 +237,7 @@ async def on_raw_reaction_add(payload):
     member = guild.get_member(payload.user_id)
     if role and member:
         await member.add_roles(role)
-        print(f"[DEBUG] Adicionado cargo {role.name} a {member.name} ({guild.name})")
+        print(f"[DEBUG] Added role {role.name} to {member.name} ({guild.name})")
 
 @bot.event
 async def on_raw_reaction_remove(payload):
@@ -254,7 +254,7 @@ async def on_raw_reaction_remove(payload):
     member = guild.get_member(payload.user_id)
     if role and member:
         await member.remove_roles(role)
-        print(f"[DEBUG] Removido cargo {role.name} de {member.name} ({guild.name})")
+        print(f"[DEBUG] Removed role {role.name} from {member.name} ({guild.name})")
 
 # ===============================
 # Event on_ready
@@ -262,21 +262,20 @@ async def on_raw_reaction_remove(payload):
 @bot.event
 async def on_ready():
     global ROLE_IDS
-    print(f"[DEBUG] Bot conectado como {bot.user}")
+    print(f"[DEBUG] Bot connected as {bot.user}")
 
     # Automatically creates roles if they don't exist.
-
     for guild in bot.guilds:
-        print(f"[DEBUG] Inicializando roles no servidor: {guild.name} ({guild.id})")
-        for emoji, nome in ROLE_NAMES.items():
-            role = discord.utils.get(guild.roles, name=nome)
+        print(f"[DEBUG] Initializing roles on server: {guild.name} ({guild.id})")
+        for emoji, name in ROLE_NAMES.items():
+            role = discord.utils.get(guild.roles, name=name)
             if not role:
-                role = await guild.create_role(name=nome)
-                print(f"[DEBUG] Cargo criado: {role.name} ({role.id})")
+                role = await guild.create_role(name=name)
+                print(f"[DEBUG] Role created: {role.name} ({role.id})")
             ROLE_IDS[emoji] = role.id
 
     await tree.sync()
-    verificar_contests.start()
-    print("[DEBUG] Loop de contests iniciado.")
+    check_contests.start()
+    print("[DEBUG] Contest check loop started.")
 
 bot.run(TOKEN)
