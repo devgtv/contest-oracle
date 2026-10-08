@@ -1,11 +1,12 @@
-import discord
-from discord.ext import tasks
-from discord import app_commands
-from dotenv import load_dotenv
-import requests
 import json
 import logging
 import os
+
+import discord
+import requests
+from discord import app_commands
+from discord.ext import tasks
+from dotenv import load_dotenv
 
 from contests import (
     REACTION_EMOJIS,
@@ -53,39 +54,44 @@ tree = app_commands.CommandTree(bot)
 # Persistent data
 # ===============================
 if os.path.exists(SERVER_CHANNELS_FILE):
-    with open(SERVER_CHANNELS_FILE, "r") as f:
+    with open(SERVER_CHANNELS_FILE) as f:
         SERVER_CHANNELS = json.load(f)
 else:
     SERVER_CHANNELS = {}
 
 if os.path.exists(SENT_CONTESTS_FILE):
-    with open(SENT_CONTESTS_FILE, "r") as f:
+    with open(SENT_CONTESTS_FILE) as f:
         SENT_CONTESTS = json.load(f)
 else:
     SENT_CONTESTS = {}
 
 if os.path.exists(REACTION_MESSAGES_FILE):
-    with open(REACTION_MESSAGES_FILE, "r") as f:
+    with open(REACTION_MESSAGES_FILE) as f:
         REACTION_MESSAGES = json.load(f)
 else:
     REACTION_MESSAGES = {}
+
 
 def save_server_channels():
     with open(SERVER_CHANNELS_FILE, "w") as f:
         json.dump(SERVER_CHANNELS, f, indent=4)
 
+
 def save_sent_contests():
     with open(SENT_CONTESTS_FILE, "w") as f:
         json.dump(SENT_CONTESTS, f, indent=4)
+
 
 def save_reaction_messages():
     with open(REACTION_MESSAGES_FILE, "w") as f:
         json.dump(REACTION_MESSAGES, f, indent=4)
 
+
 # ===============================
 # Roles per guild for emoji
 # ===============================
 ROLE_IDS: dict[str, dict[str, int]] = {}
+
 
 async def ensure_guild_roles(guild: discord.Guild) -> dict[str, int]:
     """Create (if missing) and return {emoji: role_id} for a guild."""
@@ -98,6 +104,7 @@ async def ensure_guild_roles(guild: discord.Guild) -> dict[str, int]:
         mapping[emoji] = role.id
     ROLE_IDS[str(guild.id)] = mapping
     return mapping
+
 
 # ===============================
 # Fetch Codeforces contests
@@ -121,6 +128,7 @@ def fetch_codeforces_contests():
 
     log.info("Upcoming contests found: %s", len(upcoming))
     return upcoming
+
 
 # ===============================
 # Automatic loop for sending contests
@@ -169,6 +177,7 @@ async def check_contests():
         except Exception:
             log.exception("Error while notifying guild %s", guild_id)
 
+
 # ===============================
 # Command /reactionrole
 # ===============================
@@ -180,12 +189,7 @@ async def reactionrole(interaction: discord.Interaction):
 
     await ensure_guild_roles(guild)
 
-    desc = (
-        "React with the contests you want to receive alerts for:\n\n"
-        "🔵 Div 1/2\n"
-        "🟢 Div 3\n"
-        "🟡 Div 4"
-    )
+    desc = "React with the contests you want to receive alerts for:\n\n🔵 Div 1/2\n🟢 Div 3\n🟡 Div 4"
     embed = discord.Embed(title="Reaction Roles — Codeforces", description=desc, color=discord.Color.blue())
     msg = await interaction.channel.send(embed=embed)
     for emoji in REACTION_EMOJIS:
@@ -194,7 +198,10 @@ async def reactionrole(interaction: discord.Interaction):
     REACTION_MESSAGES[str(guild.id)] = msg.id
     save_reaction_messages()
 
-    await interaction.response.send_message("Reaction roles configured and roles created automatically!", ephemeral=True)
+    await interaction.response.send_message(
+        "Reaction roles configured and roles created automatically!", ephemeral=True
+    )
+
 
 # ===============================
 # Command /listdivs
@@ -214,6 +221,7 @@ async def listdivs(interaction: discord.Interaction):
 
     await interaction.followup.send(msg, ephemeral=False)
 
+
 # ===============================
 # Command /setchannel
 # ===============================
@@ -225,6 +233,7 @@ async def setchannel(interaction: discord.Interaction, channel: discord.TextChan
     log.info("[%s] Command /setchannel called (guild id %s)", interaction.guild.name, interaction.guild.id)
     log.info("[%s] Notification channel set to: %s (%s)", interaction.guild.name, channel.name, channel.id)
     await interaction.response.send_message(f"Notification channel set to {channel.mention}!", ephemeral=True)
+
 
 # ===============================
 # Add/remove reaction events
@@ -253,6 +262,7 @@ async def on_raw_reaction_add(payload):
         await member.add_roles(role)
         log.info("Added role %s to %s (%s)", role.name, member.name, guild.name)
 
+
 @bot.event
 async def on_raw_reaction_remove(payload):
     if payload.guild_id is None:
@@ -277,6 +287,7 @@ async def on_raw_reaction_remove(payload):
         await member.remove_roles(role)
         log.info("Removed role %s from %s (%s)", role.name, member.name, guild.name)
 
+
 # ===============================
 # Event on_ready
 # ===============================
@@ -298,10 +309,10 @@ async def on_ready():
     log.info("Contest check loop started.")
     bot._bootstrap_done = True
 
+
 if not TOKEN:
     raise SystemExit(
-        "DISCORD_TOKEN is not set. Copy .env.example to .env and fill it in, "
-        "or export DISCORD_TOKEN in your shell."
+        "DISCORD_TOKEN is not set. Copy .env.example to .env and fill it in, or export DISCORD_TOKEN in your shell."
     )
 
 bot.run(TOKEN)
