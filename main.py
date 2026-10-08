@@ -3,10 +3,18 @@ from discord.ext import tasks
 from discord import app_commands
 from dotenv import load_dotenv
 import requests
-import datetime
 import json
 import logging
 import os
+
+from contests import (
+    REACTION_EMOJIS,
+    ROLE_NAMES,
+    filter_upcoming,
+    format_announcement,
+    format_list_entry,
+    sort_by_start_time,
+)
 
 # ===============================
 # Logging
@@ -24,9 +32,6 @@ logging.getLogger("discord").setLevel(logging.WARNING)
 load_dotenv()
 
 TOKEN = os.environ.get("DISCORD_TOKEN", "").strip()
-
-REACTION_EMOJIS = ["🔵", "🟢", "🟡"]
-ROLE_NAMES = {"🔵": "Div 1/2", "🟢": "Div 3", "🟡": "Div 4"}
 
 SERVER_CHANNELS_FILE = "server_channels.json"
 SENT_CONTESTS_FILE = "sent_contests.json"
@@ -112,18 +117,7 @@ def fetch_codeforces_contests():
         return []
 
     contests = payload.get("result") or []
-    upcoming = []
-
-    for c in contests:
-        if c.get("phase") != "BEFORE":
-            continue
-        name = c.get("name", "")
-        if ("Div. 1" in name or "Div. 2" in name or "Div. 1 + Div. 2" in name):
-            upcoming.append((c, "🔵"))
-        elif "Div. 3" in name:
-            upcoming.append((c, "🟢"))
-        elif "Div. 4" in name:
-            upcoming.append((c, "🟡"))
+    upcoming = filter_upcoming(contests)
 
     log.info("Upcoming contests found: %s", len(upcoming))
     return upcoming
@@ -149,18 +143,8 @@ async def notify_guild(guild_id, channel_id, contests):
         if contest_id in sent_for_server:
             continue
 
-        start_time = datetime.datetime.fromtimestamp(c["startTimeSeconds"], datetime.timezone.utc)
-        start_str = start_time.strftime("%d/%m %H:%M UTC")
         role_id = ROLE_IDS.get(str(guild_id), {}).get(emoji)
-        role_mention = f"<@&{role_id}>" if role_id else ""
-
-        msg = (
-            f"{role_mention}\n"
-            f"📢 New contest detected!\n"
-            f"{c['name']}\n"
-            f"Starts: {start_str}\n"
-            f"https://codeforces.com/contest/{c['id']}"
-        )
+        msg = format_announcement(c, emoji, role_id)
 
         log.info("[%s] Sending contest: %s to channel: %s", guild.name, c["name"], channel.name)
         try:
@@ -177,7 +161,7 @@ async def notify_guild(guild_id, channel_id, contests):
 @tasks.loop(minutes=10)
 async def check_contests():
     log.info("===== Checking contests =====")
-    contests = sorted(fetch_codeforces_contests(), key=lambda x: x[0]["startTimeSeconds"])
+    contests = sort_by_start_time(fetch_codeforces_contests())
 
     for guild_id, channel_id in SERVER_CHANNELS.items():
         try:
@@ -220,19 +204,13 @@ async def listdivs(interaction: discord.Interaction):
     log.info("[%s] Command /listdivs called (guild id %s)", interaction.guild.name, interaction.guild.id)
     await interaction.response.defer(ephemeral=False)
 
-    contests = fetch_codeforces_contests()
-    contests = sorted(contests, key=lambda x: x[0]["startTimeSeconds"])
+    contests = sort_by_start_time(fetch_codeforces_contests())
 
     if not contests:
         await interaction.followup.send("No upcoming contests found.", ephemeral=True)
         return
 
-    msg = ""
-    for c, emoji in contests[:10]:
-        start_time = datetime.datetime.fromtimestamp(c["startTimeSeconds"], datetime.timezone.utc)
-        start_str = start_time.strftime("%d/%m %H:%M UTC")
-        div = ROLE_NAMES.get(emoji, "")
-        msg += f"**{c['name']}** ({div}) — Starts: {start_str}\n🔗 https://codeforces.com/contest/{c['id']}\n\n"
+    msg = "\n".join(format_list_entry(c, emoji) for c, emoji in contests[:10])
 
     await interaction.followup.send(msg, ephemeral=False)
 
