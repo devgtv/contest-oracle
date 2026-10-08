@@ -77,27 +77,30 @@ ROLE_IDS = {}
 def fetch_codeforces_contests():
     url = "https://codeforces.com/api/contest.list?gym=false"
     try:
-        res = requests.get(url).json()
-    except Exception as e:
+        res = requests.get(url, timeout=15)
+        res.raise_for_status()
+        payload = res.json()
+    except (requests.RequestException, ValueError) as e:
         print(f"[DEBUG] Error fetching contests: {e}")
         return []
 
-    if res["status"] != "OK":
-        print("[DEBUG] Non-OK status code when fetching contests")
+    if payload.get("status") != "OK":
+        print(f"[DEBUG] Codeforces API returned a non-OK status: {payload.get('status')}")
         return []
 
-    contests = res["result"]
+    contests = payload.get("result") or []
     upcoming = []
 
     for c in contests:
-        if c["phase"] == "BEFORE":
-            name = c["name"]
-            if ("Div. 1" in name or "Div. 2" in name or "Div. 1 + Div. 2" in name):
-                upcoming.append((c, "🔵"))
-            elif "Div. 3" in name:
-                upcoming.append((c, "🟢"))
-            elif "Div. 4" in name:
-                upcoming.append((c, "🟡"))
+        if c.get("phase") != "BEFORE":
+            continue
+        name = c.get("name", "")
+        if ("Div. 1" in name or "Div. 2" in name or "Div. 1 + Div. 2" in name):
+            upcoming.append((c, "🔵"))
+        elif "Div. 3" in name:
+            upcoming.append((c, "🟢"))
+        elif "Div. 4" in name:
+            upcoming.append((c, "🟡"))
 
     print(f"[DEBUG] Upcoming contests found: {len(upcoming)}")
     return upcoming
@@ -105,47 +108,59 @@ def fetch_codeforces_contests():
 # ===============================
 # Automatic loop for sending contests
 # ===============================
+async def notify_guild(guild_id, channel_id, contests):
+    guild = bot.get_guild(int(guild_id))
+    if not guild:
+        print(f"[DEBUG] Guild {guild_id} not found")
+        return
+
+    channel = guild.get_channel(channel_id)
+    if not channel:
+        print(f"[DEBUG] Channel {channel_id} not found in {guild.name}")
+        return
+
+    sent_for_server = SENT_CONTESTS.get(str(guild_id), [])
+
+    for c, emoji in contests:
+        contest_id = c["id"]
+        if contest_id in sent_for_server:
+            continue
+
+        start_time = datetime.datetime.fromtimestamp(c["startTimeSeconds"], datetime.timezone.utc)
+        start_str = start_time.strftime("%d/%m %H:%M UTC")
+        role_id = ROLE_IDS.get(emoji)
+        role_mention = f"<@&{role_id}>" if role_id else ""
+
+        msg = (
+            f"{role_mention}\n"
+            f"📢 New contest detected!\n"
+            f"{c['name']}\n"
+            f"Starts: {start_str}\n"
+            f"https://codeforces.com/contest/{c['id']}"
+        )
+
+        print(f"[DEBUG][{guild.name}] Sending contest: {c['name']} to channel: {channel.name}")
+        try:
+            await channel.send(msg)
+        except discord.HTTPException as e:
+            print(f"[DEBUG][{guild.name}] Failed to send contest {contest_id}: {e}")
+            continue
+
+        sent_for_server.append(contest_id)
+        SENT_CONTESTS[str(guild_id)] = sent_for_server
+        save_sent_contests()
+
+
 @tasks.loop(minutes=10)
 async def check_contests():
     print("[DEBUG] ===== Checking contests =====")
+    contests = sorted(fetch_codeforces_contests(), key=lambda x: x[0]["startTimeSeconds"])
+
     for guild_id, channel_id in SERVER_CHANNELS.items():
-        guild = bot.get_guild(int(guild_id))
-        if not guild:
-            print(f"[DEBUG] Guild {guild_id} not found")
-            continue
-        channel = guild.get_channel(channel_id)
-        if not channel:
-            print(f"[DEBUG] Channel {channel_id} not found in {guild.name}")
-            continue
-
-        contests = fetch_codeforces_contests()
-        contests = sorted(contests, key=lambda x: x[0]["startTimeSeconds"])
-
-        sent_for_server = SENT_CONTESTS.get(str(guild_id), [])
-
-        for c, emoji in contests:
-            contest_id = c["id"]
-            if contest_id in sent_for_server:
-                continue
-
-            start_time = datetime.datetime.fromtimestamp(c["startTimeSeconds"], datetime.timezone.utc)
-            start_str = start_time.strftime("%d/%m %H:%M UTC")
-            role_id = ROLE_IDS.get(emoji)
-            role_mention = f"<@&{role_id}>" if role_id else ""
-
-            msg = (
-                f"{role_mention}\n"
-                f"📢 New contest detected!\n"
-                f"{c['name']}\n"
-                f"Starts: {start_str}\n"
-                f"https://codeforces.com/contest/{c['id']}"
-            )
-
-            print(f"[DEBUG][{guild.name}] Sending contest: {c['name']} to channel: {channel.name}")
-            await channel.send(msg)
-            sent_for_server.append(contest_id)
-            SENT_CONTESTS[str(guild_id)] = sent_for_server
-            save_sent_contests()
+        try:
+            await notify_guild(guild_id, channel_id, contests)
+        except Exception as e:
+            print(f"[DEBUG] Error while notifying guild {guild_id}: {e}")
 
 # ===============================
 # Command /reactionrole
@@ -278,8 +293,9 @@ async def on_ready():
             ROLE_IDS[emoji] = role.id
 
     await tree.sync()
-    check_contests.start()
-    print("[DEBUG] Contest check loop started.")
+    if not check_contests.is_running():
+        check_contests.start()
+        print("[DEBUG] Contest check loop started.")
 
 if not TOKEN:
     raise SystemExit(
