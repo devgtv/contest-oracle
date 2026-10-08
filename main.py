@@ -1,6 +1,7 @@
 import discord
 from discord.ext import tasks
 from discord import app_commands
+from dotenv import load_dotenv
 import requests
 import datetime
 import json
@@ -9,7 +10,9 @@ import os
 # ===============================
 # bot data
 # ===============================
-TOKEN = "" #Paste the bot token here.
+load_dotenv()
+
+TOKEN = os.environ.get("DISCORD_TOKEN", "").strip()
 
 REACTION_EMOJIS = ["🔵", "🟢", "🟡"]
 ROLE_NAMES = {"🔵": "Div 1/2", "🟢": "Div 3", "🟡": "Div 4"}
@@ -277,5 +280,11 @@ async def on_ready():
     await tree.sync()
     check_contests.start()
     print("[DEBUG] Contest check loop started.")
+
+if not TOKEN:
+    raise SystemExit(
+        "DISCORD_TOKEN is not set. Copy .env.example to .env and fill it in, "
+        "or export DISCORD_TOKEN in your shell."
+    )
 
 bot.run(TOKEN)

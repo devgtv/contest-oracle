@@ -1,0 +1,21 @@
+# Secrets
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Runtime data written by the bot
+server_channels.json
+sent_contests.json
+reaction_messages.json
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
