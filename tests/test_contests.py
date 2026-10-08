@@ -51,11 +51,7 @@ def test_sort_by_start_time():
 def test_format_announcement_with_role_and_without():
     start = datetime.datetime.fromtimestamp(1_700_000_000, datetime.timezone.utc).strftime("%d/%m %H:%M UTC")
     expected_without = (
-        "\n"
-        "📢 New contest detected!\n"
-        "Codeforces Round 2000 (Div. 2)\n"
-        f"Starts: {start}\n"
-        "https://codeforces.com/contest/1"
+        f"\n📢 New contest detected!\nCodeforces Round 2000 (Div. 2)\nStarts: {start}\nhttps://codeforces.com/contest/1"
     )
     assert format_announcement(make_contest(), "🔵") == expected_without
 
