@@ -67,9 +67,21 @@ def save_reaction_messages():
         json.dump(REACTION_MESSAGES, f, indent=4)
 
 # ===============================
-# Global roles for emoji
+# Roles per guild for emoji
 # ===============================
-ROLE_IDS = {}
+ROLE_IDS: dict[str, dict[str, int]] = {}
+
+async def ensure_guild_roles(guild: discord.Guild) -> dict[str, int]:
+    """Create (if missing) and return {emoji: role_id} for a guild."""
+    mapping: dict[str, int] = {}
+    for emoji, name in ROLE_NAMES.items():
+        role = discord.utils.get(guild.roles, name=name)
+        if role is None:
+            role = await guild.create_role(name=name)
+            print(f"[DEBUG][{guild.name}] Role created: {role.name} ({role.id})")
+        mapping[emoji] = role.id
+    ROLE_IDS[str(guild.id)] = mapping
+    return mapping
 
 # ===============================
 # Fetch Codeforces contests
@@ -128,7 +140,7 @@ async def notify_guild(guild_id, channel_id, contests):
 
         start_time = datetime.datetime.fromtimestamp(c["startTimeSeconds"], datetime.timezone.utc)
         start_str = start_time.strftime("%d/%m %H:%M UTC")
-        role_id = ROLE_IDS.get(emoji)
+        role_id = ROLE_IDS.get(str(guild_id), {}).get(emoji)
         role_mention = f"<@&{role_id}>" if role_id else ""
 
         msg = (
@@ -168,19 +180,10 @@ async def check_contests():
 @tree.command(name="reactionrole", description="Sets up reaction roles and creates roles automatically")
 @app_commands.default_permissions(administrator=True)
 async def reactionrole(interaction: discord.Interaction):
-    global ROLE_IDS
     guild = interaction.guild
     print(f"[DEBUG] Command /reactionrole executed on server: {guild.name} ({guild.id})")
-    ROLE_IDS = {}
 
-    for emoji, name in ROLE_NAMES.items():
-        role = discord.utils.get(guild.roles, name=name)
-        if not role:
-            role = await guild.create_role(name=name)
-            print(f"[DEBUG] Role created: {role.name} ({role.id})")
-        else:
-            print(f"[DEBUG] Existing role: {role.name} ({role.id})")
-        ROLE_IDS[emoji] = role.id
+    await ensure_guild_roles(guild)
 
     desc = (
         "React with the contests you want to receive alerts for:\n\n"
@@ -239,7 +242,7 @@ async def setchannel(interaction: discord.Interaction, channel: discord.TextChan
 # ===============================
 @bot.event
 async def on_raw_reaction_add(payload):
-    if payload.user_id == bot.user.id:
+    if payload.guild_id is None or payload.user_id == bot.user.id:
         return
 
     message_id = REACTION_MESSAGES.get(str(payload.guild_id))
@@ -247,11 +250,15 @@ async def on_raw_reaction_add(payload):
         return
 
     emoji = payload.emoji.name
-    if emoji not in ROLE_IDS:
+    role_id = ROLE_IDS.get(str(payload.guild_id), {}).get(emoji)
+    if role_id is None:
         return
 
     guild = bot.get_guild(payload.guild_id)
-    role = guild.get_role(ROLE_IDS[emoji])
+    if guild is None:
+        return
+
+    role = guild.get_role(role_id)
     member = guild.get_member(payload.user_id)
     if role and member:
         await member.add_roles(role)
@@ -259,16 +266,23 @@ async def on_raw_reaction_add(payload):
 
 @bot.event
 async def on_raw_reaction_remove(payload):
+    if payload.guild_id is None:
+        return
+
     message_id = REACTION_MESSAGES.get(str(payload.guild_id))
     if payload.message_id != message_id:
         return
 
     emoji = payload.emoji.name
-    if emoji not in ROLE_IDS:
+    role_id = ROLE_IDS.get(str(payload.guild_id), {}).get(emoji)
+    if role_id is None:
         return
 
     guild = bot.get_guild(payload.guild_id)
-    role = guild.get_role(ROLE_IDS[emoji])
+    if guild is None:
+        return
+
+    role = guild.get_role(role_id)
     member = guild.get_member(payload.user_id)
     if role and member:
         await member.remove_roles(role)
@@ -279,23 +293,21 @@ async def on_raw_reaction_remove(payload):
 # ===============================
 @bot.event
 async def on_ready():
-    global ROLE_IDS
     print(f"[DEBUG] Bot connected as {bot.user}")
+
+    # on_ready can fire again on reconnects — only bootstrap once.
+    if getattr(bot, "_bootstrap_done", False):
+        return
 
     # Automatically creates roles if they don't exist.
     for guild in bot.guilds:
         print(f"[DEBUG] Initializing roles on server: {guild.name} ({guild.id})")
-        for emoji, name in ROLE_NAMES.items():
-            role = discord.utils.get(guild.roles, name=name)
-            if not role:
-                role = await guild.create_role(name=name)
-                print(f"[DEBUG] Role created: {role.name} ({role.id})")
-            ROLE_IDS[emoji] = role.id
+        await ensure_guild_roles(guild)
 
     await tree.sync()
-    if not check_contests.is_running():
-        check_contests.start()
-        print("[DEBUG] Contest check loop started.")
+    check_contests.start()
+    print("[DEBUG] Contest check loop started.")
+    bot._bootstrap_done = True
 
 if not TOKEN:
     raise SystemExit(
